@@ -8,7 +8,6 @@
 package png
 
 import (
-	"compress/zlib"
 	"encoding/binary"
 	"fmt"
 	"hash"
@@ -16,6 +15,8 @@ import (
 	"image"
 	"image/color"
 	"io"
+
+	"github.com/klauspost/compress/zlib"
 )
 
 // Color type, as per the PNG spec.
@@ -105,23 +106,36 @@ const (
 
 const pngHeader = "\x89PNG\r\n\x1a\n"
 
+// DecoderBufferPool is an interface for getting and returning temporary byte slices
+// when decoding multiple images. Used to reduce allocations when decoding many PNGs.
+type DecoderBufferPool interface {
+	Get(size int) []byte
+	Put([]byte)
+}
+
+// Decoder optionally provides a buffer pool for decoding multiple images.
+type Decoder struct {
+	BufferPool DecoderBufferPool
+}
+
 type decoder struct {
 	r             io.Reader
 	img           image.Image
 	crc           hash.Hash32
+	bufferPool    DecoderBufferPool
+	palette       color.Palette
 	width, height int
 	depth         int
-	palette       color.Palette
 	cb            int
 	stage         int
+	interlace     int
 	idatLength    uint32
 	tmp           [3 * 256]byte
-	interlace     int
+	transparent   [6]byte
 
 	// useTransparent and transparent are used for grayscale and truecolor
 	// transparency, as opposed to palette transparency.
 	useTransparent bool
-	transparent    [6]byte
 }
 
 // A FormatError reports that the input is not a valid PNG.
@@ -365,14 +379,15 @@ func (d *decoder) decode() (image.Image, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	var img image.Image
-	if d.interlace == itNone {
+	switch d.interlace {
+	case itNone:
 		img, err = d.readImagePass(r, 0, false)
 		if err != nil {
 			return nil, err
 		}
-	} else if d.interlace == itAdam7 {
+	case itAdam7:
 		// Allocate a blank image of the full size.
 		img, err = d.readImagePass(nil, 0, true)
 		if err != nil {
@@ -387,6 +402,8 @@ func (d *decoder) decode() (image.Image, error) {
 				d.mergePassInto(img, imagePass, pass)
 			}
 		}
+	default:
+		return nil, UnsupportedError("interlace method")
 	}
 
 	// Check for EOF, to verify the zlib checksum.
@@ -502,9 +519,27 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 	if rowSize != int64(int(rowSize)) {
 		return nil, UnsupportedError("dimension overflow")
 	}
-	// cr and pr are the bytes for the current and previous row.
-	cr := make([]uint8, rowSize)
-	pr := make([]uint8, rowSize)
+	rs := int(rowSize)
+	var cr, pr []byte
+	if d.bufferPool != nil {
+		cr = d.bufferPool.Get(rs)
+		if len(cr) < rs {
+			cr = append(cr, make([]byte, rs-len(cr))...)
+		}
+		cr = cr[:rs]
+		pr = d.bufferPool.Get(rs)
+		if len(pr) < rs {
+			pr = append(pr, make([]byte, rs-len(pr))...)
+		}
+		pr = pr[:rs]
+		defer func() {
+			d.bufferPool.Put(cr)
+			d.bufferPool.Put(pr)
+		}()
+	} else {
+		cr = make([]byte, rowSize)
+		pr = make([]byte, rowSize)
+	}
 
 	for y := 0; y < height; y++ {
 		// Read the decompressed bytes.
@@ -967,25 +1002,33 @@ func (d *decoder) checkHeader() error {
 // Decode reads a PNG image from r and returns it as an [image.Image].
 // The type of Image returned depends on the PNG contents.
 func Decode(r io.Reader) (image.Image, error) {
-	d := &decoder{
-		r:   r,
-		crc: crc32.NewIEEE(),
+	var dec Decoder
+	return dec.Decode(r)
+}
+
+// Decode reads a PNG image from r and returns it as an [image.Image].
+// If d.BufferPool is non-nil, it may be used to reduce allocations when decoding.
+func (d *Decoder) Decode(r io.Reader) (image.Image, error) {
+	dec := &decoder{
+		r:          r,
+		crc:        crc32.NewIEEE(),
+		bufferPool: d.BufferPool,
 	}
-	if err := d.checkHeader(); err != nil {
+	if err := dec.checkHeader(); err != nil {
 		if err == io.EOF {
 			err = io.ErrUnexpectedEOF
 		}
 		return nil, err
 	}
-	for d.stage != dsSeenIEND {
-		if err := d.parseChunk(false); err != nil {
+	for dec.stage != dsSeenIEND {
+		if err := dec.parseChunk(false); err != nil {
 			if err == io.EOF {
 				err = io.ErrUnexpectedEOF
 			}
 			return nil, err
 		}
 	}
-	return d.img, nil
+	return dec.img, nil
 }
 
 // DecodeConfig returns the color model and dimensions of a PNG image without

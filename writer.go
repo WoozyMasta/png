@@ -6,22 +6,28 @@ package png
 
 import (
 	"bufio"
-	"compress/zlib"
 	"encoding/binary"
 	"hash/crc32"
 	"image"
 	"image/color"
 	"io"
 	"strconv"
+
+	"github.com/klauspost/compress/zlib"
 )
 
 // Encoder configures encoding PNG images.
 type Encoder struct {
-	CompressionLevel CompressionLevel
-
 	// BufferPool optionally specifies a buffer pool to get temporary
 	// EncoderBuffers when encoding an image.
 	BufferPool EncoderBufferPool
+
+	// CompressionLevel sets the compression level.
+	CompressionLevel CompressionLevel
+
+	// BufferSize sets the size in bytes of the bufio.Writer used when writing IDAT chunks.
+	// Zero uses the default 32KB.
+	BufferSize int
 }
 
 // EncoderBufferPool is an interface for getting and returning temporary
@@ -36,32 +42,36 @@ type EncoderBufferPool interface {
 type EncoderBuffer encoder
 
 type encoder struct {
-	enc     *Encoder
 	w       io.Writer
 	m       image.Image
-	cb      int
 	err     error
-	header  [8]byte
-	footer  [4]byte
-	tmp     [4 * 256]byte
+	enc     *Encoder
+	zw      *zlib.Writer
+	bw      *bufio.Writer
 	cr      [nFilter][]uint8
 	pr      []uint8
-	zw      *zlib.Writer
+	cb      int
 	zwLevel int
-	bw      *bufio.Writer
+	tmp     [4 * 256]byte
+	header  [8]byte
+	footer  [4]byte
 }
 
 // CompressionLevel indicates the compression level.
+// Use the named constants or a numeric zlib level 1-9 (1=fast, 9=best).
 type CompressionLevel int
 
 const (
+	// DefaultCompression uses the default compression algorithm (medium speed, medium output).
 	DefaultCompression CompressionLevel = 0
-	NoCompression      CompressionLevel = -1
-	BestSpeed          CompressionLevel = -2
-	BestCompression    CompressionLevel = -3
-
-	// Positive CompressionLevel values are reserved to mean a numeric zlib
-	// compression level, although that is not implemented yet.
+	// NoCompression uses no compression (fastest encode, largest output).
+	NoCompression CompressionLevel = -1
+	// BestSpeed uses the fastest compression algorithm (fastest encode, largest output).
+	BestSpeed CompressionLevel = -2
+	// BestCompression uses the best compression algorithm (slowest encode, smallest output).
+	BestCompression CompressionLevel = -3
+	// HuffmanOnly uses only Huffman encoding (no LZ); fastest encode, larger output.
+	HuffmanOnly CompressionLevel = -4
 )
 
 type opaquer interface {
@@ -306,7 +316,7 @@ func (e *encoder) writeImage(w io.Writer, m image.Image, cb int, level int) erro
 	} else {
 		e.zw.Reset(w)
 	}
-	defer e.zw.Close()
+	defer func() { _ = e.zw.Close() }()
 
 	bitsPerPixel := 0
 
@@ -412,7 +422,7 @@ func (e *encoder) writeImage(w io.Writer, m image.Image, cb int, level int) erro
 				pi := m.(image.PalettedImage)
 				for x := b.Min.X; x < b.Max.X; x++ {
 					cr[0][i] = pi.ColorIndexAt(x, y)
-					i += 1
+					i++
 				}
 			}
 
@@ -427,7 +437,7 @@ func (e *encoder) writeImage(w io.Writer, m image.Image, cb int, level int) erro
 				c++
 				if c == pixelsPerByte {
 					cr[0][i] = a
-					i += 1
+					i++
 					a = 0
 					c = 0
 				}
@@ -450,14 +460,15 @@ func (e *encoder) writeImage(w io.Writer, m image.Image, cb int, level int) erro
 				for ; len(src) >= 4; dst, src = dst[4:], src[4:] {
 					d := (*[4]byte)(dst)
 					s := (*[4]byte)(src)
-					if s[3] == 0x00 {
+					switch s[3] {
+					case 0x00:
 						d[0] = 0
 						d[1] = 0
 						d[2] = 0
 						d[3] = 0
-					} else if s[3] == 0xff {
+					case 0xff:
 						copy(d[:], s[:])
-					} else {
+					default:
 						// This code does the same as color.NRGBAModel.Convert(
 						// rgba.At(x, y)).(color.NRGBA) but with no extra memory
 						// allocations or interface/function call overhead.
@@ -549,7 +560,11 @@ func (e *encoder) writeIDATs() {
 		return
 	}
 	if e.bw == nil {
-		e.bw = bufio.NewWriterSize(e, 1<<15)
+		sz := e.enc.BufferSize
+		if sz <= 0 {
+			sz = 1 << 15
+		}
+		e.bw = bufio.NewWriterSize(e, sz)
 	} else {
 		e.bw.Reset(e)
 	}
@@ -572,7 +587,12 @@ func levelToZlib(l CompressionLevel) int {
 		return zlib.BestSpeed
 	case BestCompression:
 		return zlib.BestCompression
+	case HuffmanOnly:
+		return zlib.HuffmanOnly
 	default:
+		if l >= 1 && l <= 9 {
+			return int(l)
+		}
 		return zlib.DefaultCompression
 	}
 }
@@ -600,7 +620,6 @@ func (enc *Encoder) Encode(w io.Writer, m image.Image) error {
 	if enc.BufferPool != nil {
 		buffer := enc.BufferPool.Get()
 		e = (*encoder)(buffer)
-
 	}
 	if e == nil {
 		e = &encoder{}
