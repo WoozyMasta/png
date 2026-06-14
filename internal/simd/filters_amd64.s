@@ -60,3 +60,64 @@ reduce:
 	ADDQ   CX, AX
 	MOVQ   AX, ret+72(FP)
 	RET
+
+// func expandRGBToRGBABlocks(dst []byte, src []byte) int
+// Requires: SSE2, SSSE3
+TEXT ·expandRGBToRGBABlocks(SB), NOSPLIT, $0-56
+	MOVQ  dst_base+0(FP), AX
+	MOVQ  src_base+24(FP), CX
+	MOVQ  src_len+32(FP), DX
+	MOVOU expandShuffleMask<>+0(SB), X0
+	MOVOU expandAlphaMask<>+0(SB), X1
+	XORQ  BX, BX
+	XORQ  SI, SI
+
+loop:
+	LEAQ   16(BX), DI
+	CMPQ   DI, DX
+	JG     done
+	MOVOU  (CX)(BX*1), X2
+	PSHUFB X0, X2
+	POR    X1, X2
+	MOVOU  X2, (AX)(SI*1)
+	ADDQ   $0x0c, BX
+	ADDQ   $0x10, SI
+	JMP    loop
+
+done:
+	MOVQ BX, ret+48(FP)
+	RET
+
+DATA expandShuffleMask<>+0(SB)/16, $"\x00\x01\x02\x80\x03\x04\x05\x80\x06\a\b\x80\t\n\v\x80"
+GLOBL expandShuffleMask<>(SB), RODATA|NOPTR, $16
+
+DATA expandAlphaMask<>+0(SB)/16, $"\x00\x00\x00\xff\x00\x00\x00\xff\x00\x00\x00\xff\x00\x00\x00\xff"
+GLOBL expandAlphaMask<>(SB), RODATA|NOPTR, $16
+
+// func compactRGBAToRGBBlocks(dst []byte, src []byte) int
+// Requires: SSE2, SSSE3
+TEXT ·compactRGBAToRGBBlocks(SB), NOSPLIT, $0-56
+	MOVQ  dst_base+0(FP), AX
+	MOVQ  src_base+24(FP), CX
+	MOVQ  dst_len+8(FP), DX
+	MOVOU compactShuffleMask<>+0(SB), X0
+	XORQ  BX, BX
+	XORQ  SI, SI
+
+loop:
+	LEAQ   16(SI), DI
+	CMPQ   DI, DX
+	JG     done
+	MOVOU  (CX)(BX*1), X1
+	PSHUFB X0, X1
+	MOVOU  X1, (AX)(SI*1)
+	ADDQ   $0x10, BX
+	ADDQ   $0x0c, SI
+	JMP    loop
+
+done:
+	MOVQ SI, ret+48(FP)
+	RET
+
+DATA compactShuffleMask<>+0(SB)/16, $"\x00\x01\x02\x04\x05\x06\b\t\n\f\r\x0e\x80\x80\x80\x80"
+GLOBL compactShuffleMask<>(SB), RODATA|NOPTR, $16

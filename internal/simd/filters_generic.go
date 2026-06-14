@@ -30,3 +30,26 @@ func SubAndSumAbs(dst, a, b []byte) int {
 	}
 	return sum
 }
+
+// ExpandRGBToRGBA writes npix RGBA pixels into dst from npix RGB pixels in src,
+// setting every alpha byte to 0xFF.
+// Requires len(dst) >= 4*npix and len(src) >= 3*npix.
+func ExpandRGBToRGBA(dst, src []byte, npix int) {
+	for i := 0; i < npix; i++ {
+		dst[4*i+0] = src[3*i+0]
+		dst[4*i+1] = src[3*i+1]
+		dst[4*i+2] = src[3*i+2]
+		dst[4*i+3] = 0xff
+	}
+}
+
+// CompactRGBAToRGB writes npix RGB pixels into dst from npix RGBA pixels in src,
+// dropping the alpha byte.
+// Requires len(dst) >= 3*npix and len(src) >= 4*npix.
+func CompactRGBAToRGB(dst, src []byte, npix int) {
+	for i := 0; i < npix; i++ {
+		dst[3*i+0] = src[4*i+0]
+		dst[3*i+1] = src[4*i+1]
+		dst[3*i+2] = src[4*i+2]
+	}
+}

@@ -9,3 +9,9 @@ func addIntoBlocks(dst []byte, src []byte)
 
 // subSumBlocks sets dst[i]=a[i]-b[i] and returns sum of abs8 over the first len(a)&^15 bytes.
 func subSumBlocks(dst []byte, a []byte, b []byte) uint64
+
+// expandRGBToRGBABlocks converts whole groups of 4 RGB pixels to RGBA (alpha 0xFF) and returns src bytes consumed.
+func expandRGBToRGBABlocks(dst []byte, src []byte) int
+
+// compactRGBAToRGBBlocks converts whole groups of 4 RGBA pixels to RGB and returns dst bytes written.
+func compactRGBAToRGBBlocks(dst []byte, src []byte) int

@@ -697,15 +697,8 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 				}
 				pixOffset += nrgba.Stride
 			} else {
-				pix, i, j := rgba.Pix, pixOffset, 0
-				for x := 0; x < width; x++ {
-					pix[i+0] = cdat[j+0]
-					pix[i+1] = cdat[j+1]
-					pix[i+2] = cdat[j+2]
-					pix[i+3] = 0xff
-					i += 4
-					j += 3
-				}
+				// Expand RGB (3 bytes) to RGBA (4 bytes, alpha 0xFF).
+				simd.ExpandRGBToRGBA(rgba.Pix[pixOffset:], cdat, width)
 				pixOffset += rgba.Stride
 			}
 		case cbP1:

@@ -401,14 +401,9 @@ func (e *encoder) writeImage(w io.Writer, m image.Image, cb int, level int) erro
 				stride, pix = nrgba.Stride, nrgba.Pix
 			}
 			if stride != 0 {
+				// Compact RGBA (4 bytes) to RGB (3 bytes); alpha is opaque.
 				j0 := (y - b.Min.Y) * stride
-				j1 := j0 + b.Dx()*4
-				for j := j0; j < j1; j += 4 {
-					cr0[i+0] = pix[j+0]
-					cr0[i+1] = pix[j+1]
-					cr0[i+2] = pix[j+2]
-					i += 3
-				}
+				simd.CompactRGBAToRGB(cr0[1:], pix[j0:j0+b.Dx()*4], b.Dx())
 			} else {
 				for x := b.Min.X; x < b.Max.X; x++ {
 					r, g, b, _ := m.At(x, y).RGBA()

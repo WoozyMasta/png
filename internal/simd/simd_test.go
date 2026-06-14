@@ -64,3 +64,45 @@ func TestSubAndSumAbs(t *testing.T) {
 		}
 	}
 }
+
+// pixelCounts spans below the SIMD threshold (<6 px => fully scalar), exact
+// 4-pixel group boundaries, and odd remainders that exercise the scalar tail.
+var pixelCounts = []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 63, 64, 65, 640}
+
+func TestExpandRGBToRGBA(t *testing.T) {
+	r := rand.New(rand.NewSource(4))
+	for _, px := range pixelCounts {
+		src := randBytes(px*3, r)
+		got := make([]byte, px*4)
+		want := make([]byte, px*4)
+		ExpandRGBToRGBA(got, src, px)
+		for i := 0; i < px; i++ {
+			want[4*i+0] = src[3*i+0]
+			want[4*i+1] = src[3*i+1]
+			want[4*i+2] = src[3*i+2]
+			want[4*i+3] = 0xff
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("ExpandRGBToRGBA px=%d:\n got %x\nwant %x", px, got, want)
+		}
+	}
+}
+
+func TestCompactRGBAToRGB(t *testing.T) {
+	r := rand.New(rand.NewSource(5))
+	for _, px := range pixelCounts {
+		src := randBytes(px*4, r)
+		// Pre-fill dst with a sentinel to catch stray writes past 3*npix.
+		got := bytes.Repeat([]byte{0xAB}, px*3)
+		want := bytes.Repeat([]byte{0xAB}, px*3)
+		CompactRGBAToRGB(got, src, px)
+		for i := 0; i < px; i++ {
+			want[3*i+0] = src[4*i+0]
+			want[3*i+1] = src[4*i+1]
+			want[3*i+2] = src[4*i+2]
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("CompactRGBAToRGB px=%d:\n got %x\nwant %x", px, got, want)
+		}
+	}
+}

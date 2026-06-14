@@ -37,3 +37,33 @@ func BenchmarkSubAndSumAbs(b *testing.B) {
 		_ = SubAndSumAbs(dst, a, c)
 	}
 }
+
+func BenchmarkExpandRGBToRGBA(b *testing.B) {
+	const px = 640
+	src := make([]byte, px*3)
+	for i := range src {
+		src[i] = byte(i)
+	}
+	dst := make([]byte, px*4)
+	b.SetBytes(px * 4)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ExpandRGBToRGBA(dst, src, px)
+	}
+}
+
+func BenchmarkCompactRGBAToRGB(b *testing.B) {
+	const px = 640
+	src := make([]byte, px*4)
+	for i := range src {
+		src[i] = byte(i)
+	}
+	dst := make([]byte, px*3)
+	b.SetBytes(px * 3)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		CompactRGBAToRGB(dst, src, px)
+	}
+}
