@@ -17,6 +17,7 @@ import (
 	"io"
 
 	"github.com/klauspost/compress/zlib"
+	"github.com/woozymasta/png/internal/simd"
 )
 
 // Color type, as per the PNG spec.
@@ -562,9 +563,9 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 				cdat[i] += cdat[i-bytesPerPixel]
 			}
 		case ftUp:
-			for i, p := range pdat {
-				cdat[i] += p
-			}
+			// cdat[i] += pdat[i]; pdat is the already-reconstructed previous row,
+			// so there is no intra-row dependency (SIMD-friendly).
+			simd.AddInto(cdat, pdat)
 		case ftAverage:
 			// The first column has no column to the left of it, so it is a
 			// special case. We know that the first column exists because we

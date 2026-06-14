@@ -14,6 +14,7 @@ import (
 	"strconv"
 
 	"github.com/klauspost/compress/zlib"
+	"github.com/woozymasta/png/internal/simd"
 )
 
 // Encoder configures encoding PNG images.
@@ -228,17 +229,16 @@ func filter(cr *[nFilter][]byte, pr []byte, bpp int) int {
 	pdat := pr[1:]
 	n := len(cdat0)
 
-	// The up filter.
-	sum := 0
-	for i := 0; i < n; i++ {
-		cdat2[i] = cdat0[i] - pdat[i]
-		sum += abs8(cdat2[i])
-	}
-	best := sum
+	// The up filter is the unconditional baseline:
+	// unlike the other candidates it has no early-out,
+	// so it always scans the whole row and dominates filter()'s cost.
+	// The SIMD kernel writes cdat2[i] = cdat0[i] - pdat[i]
+	// and returns the abs8 sum in a single pass.
+	best := simd.SubAndSumAbs(cdat2, cdat0, pdat)
 	filter := ftUp
 
 	// The Paeth filter.
-	sum = 0
+	sum := 0
 	for i := 0; i < bpp; i++ {
 		cdat4[i] = cdat0[i] - pdat[i]
 		sum += abs8(cdat4[i])
