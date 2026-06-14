@@ -768,17 +768,23 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 					nrgba64.SetNRGBA64(x, y, color.NRGBA64{ycol, ycol, ycol, acol})
 				}
 			} else {
-				for x := 0; x < width; x++ {
-					ycol := uint16(cdat[2*x+0])<<8 | uint16(cdat[2*x+1])
-					gray16.SetGray16(x, y, color.Gray16{ycol})
-				}
+				// image.Gray16.Pix is big-endian Y, exactly the decoded byte order.
+				copy(gray16.Pix[pixOffset:], cdat)
+				pixOffset += gray16.Stride
 			}
 		case cbGA16:
+			// Expand gray+alpha (4 bytes) to NRGBA64 (8 bytes) with direct Pix writes,
+			// avoiding the per-pixel SetNRGBA64 call and bounds checks.
+			pix, j := nrgba64.Pix, pixOffset
 			for x := 0; x < width; x++ {
-				ycol := uint16(cdat[4*x+0])<<8 | uint16(cdat[4*x+1])
-				acol := uint16(cdat[4*x+2])<<8 | uint16(cdat[4*x+3])
-				nrgba64.SetNRGBA64(x, y, color.NRGBA64{ycol, ycol, ycol, acol})
+				yhi, ylo := cdat[4*x+0], cdat[4*x+1]
+				pix[j+0], pix[j+1] = yhi, ylo
+				pix[j+2], pix[j+3] = yhi, ylo
+				pix[j+4], pix[j+5] = yhi, ylo
+				pix[j+6], pix[j+7] = cdat[4*x+2], cdat[4*x+3]
+				j += 8
 			}
+			pixOffset += nrgba64.Stride
 		case cbTC16:
 			if d.useTransparent {
 				tr := uint16(d.transparent[0])<<8 | uint16(d.transparent[1])
@@ -803,13 +809,9 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 				}
 			}
 		case cbTCA16:
-			for x := 0; x < width; x++ {
-				rcol := uint16(cdat[8*x+0])<<8 | uint16(cdat[8*x+1])
-				gcol := uint16(cdat[8*x+2])<<8 | uint16(cdat[8*x+3])
-				bcol := uint16(cdat[8*x+4])<<8 | uint16(cdat[8*x+5])
-				acol := uint16(cdat[8*x+6])<<8 | uint16(cdat[8*x+7])
-				nrgba64.SetNRGBA64(x, y, color.NRGBA64{rcol, gcol, bcol, acol})
-			}
+			// image.NRGBA64.Pix is big-endian RGBA, exactly the decoded byte order.
+			copy(nrgba64.Pix[pixOffset:], cdat)
+			pixOffset += nrgba64.Stride
 		}
 
 		// The current row for y is the previous row for y+1.

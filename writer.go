@@ -117,10 +117,11 @@ func (e *encoder) writeChunk(b []byte, name string) {
 	e.header[5] = name[1]
 	e.header[6] = name[2]
 	e.header[7] = name[3]
-	crc := crc32.NewIEEE()
-	crc.Write(e.header[4:8])
-	crc.Write(b)
-	binary.BigEndian.PutUint32(e.footer[:4], crc.Sum32())
+	// crc32.Update special-cases IEEETable to the hardware-accelerated path,
+	// so this matches crc32.NewIEEE() speed without allocating a hash per chunk.
+	crc := crc32.Update(0, crc32.IEEETable, e.header[4:8])
+	crc = crc32.Update(crc, crc32.IEEETable, b)
+	binary.BigEndian.PutUint32(e.footer[:4], crc)
 
 	_, e.err = e.w.Write(e.header[:8])
 	if e.err != nil {
@@ -371,6 +372,9 @@ func (e *encoder) writeImage(w io.Writer, m image.Image, cb int, level int) erro
 	rgba, _ := m.(*image.RGBA)
 	paletted, _ := m.(*image.Paletted)
 	nrgba, _ := m.(*image.NRGBA)
+	gray16, _ := m.(*image.Gray16)
+	rgba64, _ := m.(*image.RGBA64)
+	nrgba64, _ := m.(*image.NRGBA64)
 
 	for y := b.Min.Y; y < b.Max.Y; y++ {
 		// Convert from colors to bytes.
@@ -497,37 +501,75 @@ func (e *encoder) writeImage(w io.Writer, m image.Image, cb int, level int) erro
 				}
 			}
 		case cbG16:
-			for x := b.Min.X; x < b.Max.X; x++ {
-				c := color.Gray16Model.Convert(m.At(x, y)).(color.Gray16)
-				cr[0][i+0] = uint8(c.Y >> 8)
-				cr[0][i+1] = uint8(c.Y)
-				i += 2
+			if gray16 != nil {
+				// image.Gray16.Pix is big-endian Y, exactly the PNG byte order.
+				offset := (y - b.Min.Y) * gray16.Stride
+				copy(cr[0][1:], gray16.Pix[offset:offset+b.Dx()*2])
+			} else {
+				for x := b.Min.X; x < b.Max.X; x++ {
+					c := color.Gray16Model.Convert(m.At(x, y)).(color.Gray16)
+					cr[0][i+0] = uint8(c.Y >> 8)
+					cr[0][i+1] = uint8(c.Y)
+					i += 2
+				}
 			}
 		case cbTC16:
 			// We have previously verified that the alpha value is fully opaque.
-			for x := b.Min.X; x < b.Max.X; x++ {
-				r, g, b, _ := m.At(x, y).RGBA()
-				cr[0][i+0] = uint8(r >> 8)
-				cr[0][i+1] = uint8(r)
-				cr[0][i+2] = uint8(g >> 8)
-				cr[0][i+3] = uint8(g)
-				cr[0][i+4] = uint8(b >> 8)
-				cr[0][i+5] = uint8(b)
-				i += 6
+			// For both *image.RGBA64 (alpha-premultiplied) and *image.NRGBA64
+			// (non-premultiplied) the R/G/B bytes are identical when opaque,
+			// so we can drop the 2 alpha bytes of every 8-byte pixel directly.
+			var pix []byte
+			var stride int
+			if rgba64 != nil {
+				pix, stride = rgba64.Pix, rgba64.Stride
+			} else if nrgba64 != nil {
+				pix, stride = nrgba64.Pix, nrgba64.Stride
+			}
+			if pix != nil {
+				cr0 := cr[0]
+				j := (y - b.Min.Y) * stride
+				for x := 0; x < b.Dx(); x++ {
+					cr0[i+0] = pix[j+0]
+					cr0[i+1] = pix[j+1]
+					cr0[i+2] = pix[j+2]
+					cr0[i+3] = pix[j+3]
+					cr0[i+4] = pix[j+4]
+					cr0[i+5] = pix[j+5]
+					i += 6
+					j += 8
+				}
+			} else {
+				for x := b.Min.X; x < b.Max.X; x++ {
+					r, g, b, _ := m.At(x, y).RGBA()
+					cr[0][i+0] = uint8(r >> 8)
+					cr[0][i+1] = uint8(r)
+					cr[0][i+2] = uint8(g >> 8)
+					cr[0][i+3] = uint8(g)
+					cr[0][i+4] = uint8(b >> 8)
+					cr[0][i+5] = uint8(b)
+					i += 6
+				}
 			}
 		case cbTCA16:
-			// Convert from image.Image (which is alpha-premultiplied) to PNG's non-alpha-premultiplied.
-			for x := b.Min.X; x < b.Max.X; x++ {
-				c := color.NRGBA64Model.Convert(m.At(x, y)).(color.NRGBA64)
-				cr[0][i+0] = uint8(c.R >> 8)
-				cr[0][i+1] = uint8(c.R)
-				cr[0][i+2] = uint8(c.G >> 8)
-				cr[0][i+3] = uint8(c.G)
-				cr[0][i+4] = uint8(c.B >> 8)
-				cr[0][i+5] = uint8(c.B)
-				cr[0][i+6] = uint8(c.A >> 8)
-				cr[0][i+7] = uint8(c.A)
-				i += 8
+			if nrgba64 != nil {
+				// image.NRGBA64.Pix is already non-premultiplied big-endian RGBA,
+				// exactly the PNG byte order.
+				offset := (y - b.Min.Y) * nrgba64.Stride
+				copy(cr[0][1:], nrgba64.Pix[offset:offset+b.Dx()*8])
+			} else {
+				// Convert from image.Image (which is alpha-premultiplied) to PNG's non-alpha-premultiplied.
+				for x := b.Min.X; x < b.Max.X; x++ {
+					c := color.NRGBA64Model.Convert(m.At(x, y)).(color.NRGBA64)
+					cr[0][i+0] = uint8(c.R >> 8)
+					cr[0][i+1] = uint8(c.R)
+					cr[0][i+2] = uint8(c.G >> 8)
+					cr[0][i+3] = uint8(c.G)
+					cr[0][i+4] = uint8(c.B >> 8)
+					cr[0][i+5] = uint8(c.B)
+					cr[0][i+6] = uint8(c.A >> 8)
+					cr[0][i+7] = uint8(c.A)
+					i += 8
+				}
 			}
 		}
 
