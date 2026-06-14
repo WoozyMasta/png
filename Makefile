@@ -4,8 +4,7 @@ ALIGNER   ?= betteralign
 BENCH_REF ?= testdata/bench_baseline.txt
 
 .PHONY: generate generate-check test test-race test-pure \
-	bench verify vet fmt fmt-check lint align align-fix tidy download \
-	check tools release-notes
+	bench verify vet fmt fmt-check lint align align-fix tidy download check
 
 check: fmt-check generate-check vet lint align test test-pure
 
@@ -70,13 +69,39 @@ align-fix:
 	-$(ALIGNER) -apply ./...
 	$(ALIGNER) ./...
 
+.PHONY: tools tool-golangci-lint tool-betteralign tool-benchstat
+
 tools:
 	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	$(GO) install github.com/dkorunic/betteralign/cmd/betteralign@latest
 	$(GO) install golang.org/x/perf/cmd/benchstat@latest
 
+tools: tool-golangci-lint tool-betteralign tool-benchstat
+
+tool-golangci-lint:
+	$(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+
+tool-betteralign:
+	$(GO) install github.com/dkorunic/betteralign/cmd/betteralign@latest
+
+tool-benchstat:
+	$(GO) install golang.org/x/perf/cmd/benchstat@latest
+
+.PHONY: release-notes
+
 release-notes:
 	@awk '\
 	/^<!--/,/^-->/ { next } \
-	/^## \[[0-9]+\.[0-9]+\.[0-9]+\]/ { if (found) exit; found=1; next } found { print } \
+	/^## \[[0-9]+\.[0-9]+\.[0-9]+\]/ { if (found) exit; found=1; next } \
+	found { \
+		if (/^## \[/) { exit } \
+		if (/^$$/) { flush(); print; next } \
+		if (/^\* / || /^- /) { flush(); buf=$$0; next } \
+		if (/^###/ || /^\[/) { flush(); print; next } \
+		sub(/^[ \t]+/, ""); sub(/[ \t]+$$/, ""); \
+		if (buf != "") { buf = buf " " $$0 } else { buf = $$0 } \
+		next \
+	} \
+	function flush() { if (buf != "") { print buf; buf = "" } } \
+	END { flush() } \
 	' CHANGELOG.md
