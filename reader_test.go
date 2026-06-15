@@ -876,3 +876,70 @@ func BenchmarkDecodeRGB(b *testing.B) {
 func BenchmarkDecodeInterlacing(b *testing.B) {
 	benchmarkDecode(b, "testdata/benchRGB-interlace.png", 4)
 }
+
+// benchmarkDecodeImage encodes m once (outside the timed loop)
+// and then benchmarks decoding it.
+// Used for formats that have no committed testdata file,
+// notably the 16-bit color types.
+func benchmarkDecodeImage(b *testing.B, m image.Image, bytesPerPixel int) {
+	var buf bytes.Buffer
+	if err := Encode(&buf, m); err != nil {
+		b.Fatal(err)
+	}
+	data := buf.Bytes()
+	bd := m.Bounds()
+	b.SetBytes(int64(bd.Dx() * bd.Dy() * bytesPerPixel))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Decode(bytes.NewReader(data)); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDecodeGray16(b *testing.B) {
+	const w, h = 640, 480
+	m := image.NewGray16(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			m.SetGray16(x, y, color.Gray16{Y: uint16((x*131 + y*17) & 0xffff)})
+		}
+	}
+	benchmarkDecodeImage(b, m, 2)
+}
+
+func BenchmarkDecodeRGBA64(b *testing.B) {
+	const w, h = 640, 480
+	m := image.NewRGBA64(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			m.SetRGBA64(x, y, color.RGBA64{
+				R: uint16(x * 97),
+				G: uint16(y * 131),
+				B: uint16((x + y) * 71),
+				A: 0xffff,
+			})
+		}
+	}
+	benchmarkDecodeImage(b, m, 8)
+}
+
+func BenchmarkDecodeNRGBA64(b *testing.B) {
+	const w, h = 640, 480
+	m := image.NewNRGBA64(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			m.SetNRGBA64(x, y, color.NRGBA64{
+				R: uint16(x * 97),
+				G: uint16(y * 131),
+				B: uint16((x + y) * 71),
+				A: uint16(0x4000 + (x+y)*53),
+			})
+		}
+	}
+	if m.Opaque() {
+		b.Fatal("expected image not to be opaque")
+	}
+	benchmarkDecodeImage(b, m, 8)
+}

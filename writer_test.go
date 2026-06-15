@@ -278,6 +278,49 @@ func TestWriteRGBA(t *testing.T) {
 	}
 }
 
+// TestRoundTrip16Bit exercises the 16-bit color paths
+// (Gray16, RGBA64 opaque -> cbTC16, NRGBA64 with alpha -> cbTCA16)
+// on generated images with odd dimensions, so row lengths are not a multiple of any vector width.
+// It locks the encode/decode byte invariants that the 16-bit fast paths rely on.
+func TestRoundTrip16Bit(t *testing.T) {
+	const w, h = 17, 13
+
+	gray16 := image.NewGray16(image.Rect(0, 0, w, h))
+	rgba64 := image.NewRGBA64(image.Rect(0, 0, w, h))
+	nrgba64 := image.NewNRGBA64(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			gray16.SetGray16(x, y, color.Gray16{Y: uint16((x*4099 + y*65521) & 0xffff)})
+			rgba64.SetRGBA64(x, y, color.RGBA64{
+				R: uint16(x * 3851), G: uint16(y * 4099), B: uint16((x + y) * 257), A: 0xffff,
+			})
+			nrgba64.SetNRGBA64(x, y, color.NRGBA64{
+				R: uint16(x * 3851), G: uint16(y * 4099), B: uint16((x + y) * 257),
+				A: uint16(0x1000 + (x+y)*1024),
+			})
+		}
+	}
+
+	for _, tc := range []struct {
+		name string
+		img  image.Image
+	}{
+		{"Gray16", gray16},
+		{"RGBA64", rgba64},
+		{"NRGBA64", nrgba64},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m1, err := encodeDecode(tc.img)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := diff(tc.img, m1); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
 func BenchmarkEncodeGray(b *testing.B) {
 	img := image.NewGray(image.Rect(0, 0, 640, 480))
 	b.SetBytes(640 * 480 * 1)
@@ -399,6 +442,70 @@ func BenchmarkEncodeRGBA(b *testing.B) {
 		b.Fatal("expected image not to be opaque")
 	}
 	b.SetBytes(width * height * 4)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Encode(io.Discard, img)
+	}
+}
+
+func BenchmarkEncodeGray16(b *testing.B) {
+	const width, height = 640, 480
+	img := image.NewGray16(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.SetGray16(x, y, color.Gray16{Y: uint16((x*131 + y*17) & 0xffff)})
+		}
+	}
+	b.SetBytes(width * height * 2)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Encode(io.Discard, img)
+	}
+}
+
+func BenchmarkEncodeRGBA64(b *testing.B) {
+	const width, height = 640, 480
+	img := image.NewRGBA64(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.SetRGBA64(x, y, color.RGBA64{
+				R: uint16(x * 97),
+				G: uint16(y * 131),
+				B: uint16((x + y) * 71),
+				A: 0xffff,
+			})
+		}
+	}
+	if !img.Opaque() {
+		b.Fatal("expected image to be opaque")
+	}
+	b.SetBytes(width * height * 8)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		Encode(io.Discard, img)
+	}
+}
+
+func BenchmarkEncodeNRGBA64(b *testing.B) {
+	const width, height = 640, 480
+	img := image.NewNRGBA64(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.SetNRGBA64(x, y, color.NRGBA64{
+				R: uint16(x * 97),
+				G: uint16(y * 131),
+				B: uint16((x + y) * 71),
+				A: uint16(0x4000 + (x+y)*53),
+			})
+		}
+	}
+	if img.Opaque() {
+		b.Fatal("expected image not to be opaque")
+	}
+	b.SetBytes(width * height * 8)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
