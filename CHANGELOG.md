@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning][].
 ### Removed
 -->
 
-## Unreleased
+## [1.1.0][] - 2026-06-15
 
 ### Added
 
@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning][].
 * SIMD (amd64, avo-generated): SSE2 Up-filter add/SAD and SSSE3 `PSHUFB`
   RGB<->RGBA conversion, with a pure-Go fallback elsewhere;
   geomean -30% time vs 1.0.0.
+
+[1.1.0]: https://github.com/WoozyMasta/lzss/compare/v1.0.0...v1.1.0
 
 ## [1.0.0][] - 2026-02-10
 
