@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning][].
 
 ### Added
 
-* `purego` build tag to force the pure-Go paths (no assembly).
+* `purego` build tag compile-time
+  and `PNG_PUREGO=1` runtime environment variable
+  to force the pure-Go paths (no assembly);
 
 ### Changed
 

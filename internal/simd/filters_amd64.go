@@ -11,11 +11,13 @@ package simd
 func AddInto(dst, src []byte) {
 	n := len(dst)
 	blocks := n &^ 15
-	if blocks > 0 {
+	done := 0
+	if hasSSE2 && blocks > 0 {
 		addIntoBlocks(dst, src)
+		done = blocks
 	}
 
-	for i := blocks; i < n; i++ {
+	for i := done; i < n; i++ {
 		dst[i] += src[i]
 	}
 }
@@ -28,11 +30,13 @@ func SubAndSumAbs(dst, a, b []byte) int {
 	n := len(a)
 	blocks := n &^ 15
 	var sum uint64
-	if blocks > 0 {
+	done := 0
+	if hasSSE2 && blocks > 0 {
 		sum = subSumBlocks(dst, a, b)
+		done = blocks
 	}
 
-	for i := blocks; i < n; i++ {
+	for i := done; i < n; i++ {
 		d := a[i] - b[i]
 		dst[i] = d
 		if d < 128 {
