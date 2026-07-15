@@ -357,6 +357,18 @@ func maxIDATLen(data []byte) uint32 {
 	return max
 }
 
+// TestEncoderIsDropIn locks the drop-in guarantee:
+// Encoder must have exactly the same fields, types and order as image/png.Encoder,
+// so that even an unkeyed struct literal stays source-compatible after switching the import.
+// Adding a field to Encoder (instead of AdvancedEncoder) breaks this on purpose.
+func TestEncoderIsDropIn(t *testing.T) {
+	// Mirrors the standard library's png.Encoder{png.BestSpeed, nil}.
+	enc := Encoder{BestSpeed, nil}
+	if enc.CompressionLevel != BestSpeed {
+		t.Fatalf("CompressionLevel = %v, want %v", enc.CompressionLevel, BestSpeed)
+	}
+}
+
 // TestEncoderBufferSizeWithPool verifies that BufferSize
 // is honored when an EncoderBuffer is reused via a BufferPool.
 // Otherwise the buffered writer keeps the size from the first encode
@@ -377,19 +389,19 @@ func TestEncoderBufferSizeWithPool(t *testing.T) {
 	var p pool
 
 	// First encode pins the small buffer size into the pooled EncoderBuffer.
-	if err := (&Encoder{BufferPool: &p, BufferSize: smallSize}).Encode(io.Discard, m); err != nil {
+	if err := (&AdvancedEncoder{Encoder: Encoder{BufferPool: &p}, BufferSize: smallSize}).Encode(io.Discard, m); err != nil {
 		t.Fatalf("first encode: %v", err)
 	}
 
 	// Second encode reuses the same buffer but asks for the large size.
 	var pooled bytes.Buffer
-	if err := (&Encoder{BufferPool: &p, BufferSize: largeSize}).Encode(&pooled, m); err != nil {
+	if err := (&AdvancedEncoder{Encoder: Encoder{BufferPool: &p}, BufferSize: largeSize}).Encode(&pooled, m); err != nil {
 		t.Fatalf("pooled encode: %v", err)
 	}
 
 	// Reference: same image and BufferSize, but no reuse.
 	var ref bytes.Buffer
-	if err := (&Encoder{BufferSize: largeSize}).Encode(&ref, m); err != nil {
+	if err := (&AdvancedEncoder{BufferSize: largeSize}).Encode(&ref, m); err != nil {
 		t.Fatalf("reference encode: %v", err)
 	}
 

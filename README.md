@@ -41,17 +41,20 @@ and under the `purego` build tag.
 
 ## Encoder and decoder options
 
-### Encoder
+`Encoder` is a drop-in replacement for the standard library type:
+same fields (`CompressionLevel`, `BufferPool`), same order, same method,
+so keyed and unkeyed struct literals keep compiling after switching the import.
+Extensions live on `AdvancedEncoder`, which embeds `Encoder`.
 
-* CompressionLevel: added `HuffmanOnly`
-  (Huffman-only, no LZ; fastest encode, larger files)
+* CompressionLevel:
+  added `HuffmanOnly` (Huffman-only, no LZ; fastest encode, larger files)
   and numeric zlib level 1-9 (1=fast, 9=best). Rest as in standard library.
-* BufferPool (`EncoderBufferPool`): reuse encoder internal buffers
-  across multiple `Encode` calls.
+* BufferPool (`EncoderBufferPool`):
+  reuse encoder internal buffers across multiple `Encode` calls.
   Cuts allocations when encoding many images in a row.
-* BufferSize: size in bytes of the `bufio.Writer` used when writing IDAT chunks
-  (default 32KB). Lets you tune for very large images or higher throughput;
-  zero means default.
+* BufferSize (`AdvancedEncoder`):
+  size in bytes of `bufio.Writer` used when writing IDAT chunks (default 32KB).
+  Lets you tune for very large images or higher throughput; zero means default.
 
 ### Decoder
 

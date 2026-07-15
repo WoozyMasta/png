@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning][].
 
 ## Unreleased
 
+### Changed
+
+* `Encoder` is now a true drop-in replacement for `image/png.Encoder`:
+  it exposes exactly `CompressionLevel` and `BufferPool`, in the same order,
+  so both keyed and unkeyed struct literals compile after switching the import.
+  The `BufferSize` option moved to `AdvancedEncoder`, which embeds `Encoder`.
+  Migrate `png.Encoder{BufferSize: n}` to `png.AdvancedEncoder{BufferSize: n}`.
+
 ### Fixed
 
 * Decoder: `BufferPool` no longer produces corrupted output.

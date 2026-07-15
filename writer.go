@@ -18,13 +18,24 @@ import (
 )
 
 // Encoder configures encoding PNG images.
-type Encoder struct {
+//
+// It is a drop-in replacement for the standard library's [image/png.Encoder]:
+// the fields have the same names, types and order,
+// so both keyed and unkeyed struct literals stay source-compatible after switching the import.
+// Options beyond the standard library live on [AdvancedEncoder].
+type Encoder struct { // betteralign:ignore
+	// CompressionLevel sets the compression level.
+	CompressionLevel CompressionLevel
+
 	// BufferPool optionally specifies a buffer pool to get temporary
 	// EncoderBuffers when encoding an image.
 	BufferPool EncoderBufferPool
+}
 
-	// CompressionLevel sets the compression level.
-	CompressionLevel CompressionLevel
+// AdvancedEncoder configures encoding PNG images with options that go beyond standard library's.
+// It embeds [Encoder], so the CompressionLevel and BufferPool fields carry the same meaning.
+type AdvancedEncoder struct {
+	Encoder
 
 	// BufferSize sets the size in bytes of the bufio.Writer used when writing IDAT chunks.
 	// Zero uses the default 32KB.
@@ -43,19 +54,20 @@ type EncoderBufferPool interface {
 type EncoderBuffer encoder
 
 type encoder struct {
-	w       io.Writer
-	m       image.Image
-	err     error
-	enc     *Encoder
-	zw      *zlib.Writer
-	bw      *bufio.Writer
-	cr      [nFilter][]uint8
-	pr      []uint8
-	cb      int
-	zwLevel int
-	tmp     [4 * 256]byte
-	header  [8]byte
-	footer  [4]byte
+	w           io.Writer
+	m           image.Image
+	err         error
+	zw          *zlib.Writer
+	bw          *bufio.Writer
+	cr          [nFilter][]uint8
+	pr          []uint8
+	cb          int
+	zwLevel     int
+	bufferSize  int
+	compression CompressionLevel
+	tmp         [4 * 256]byte
+	header      [8]byte
+	footer      [4]byte
 }
 
 // CompressionLevel indicates the compression level.
@@ -596,7 +608,7 @@ func (e *encoder) writeIDATs() {
 	if e.err != nil {
 		return
 	}
-	size := e.enc.BufferSize
+	size := e.bufferSize
 	if size <= 0 {
 		size = 1 << 15
 	}
@@ -607,7 +619,7 @@ func (e *encoder) writeIDATs() {
 	} else {
 		e.bw.Reset(e)
 	}
-	e.err = e.writeImage(e.bw, e.m, e.cb, levelToZlib(e.enc.CompressionLevel))
+	e.err = e.writeImage(e.bw, e.m, e.cb, levelToZlib(e.compression))
 	if e.err != nil {
 		return
 	}
@@ -647,6 +659,17 @@ func Encode(w io.Writer, m image.Image) error {
 
 // Encode writes the Image m to w in PNG format.
 func (enc *Encoder) Encode(w io.Writer, m image.Image) error {
+	return encode(w, m, enc.CompressionLevel, enc.BufferPool, 0)
+}
+
+// Encode writes the Image m to w in PNG format.
+func (enc *AdvancedEncoder) Encode(w io.Writer, m image.Image) error {
+	return encode(w, m, enc.CompressionLevel, enc.BufferPool, enc.BufferSize)
+}
+
+// encode is the shared implementation behind Encoder.Encode and
+// AdvancedEncoder.Encode. bufferSize <= 0 selects the default IDAT buffer size.
+func encode(w io.Writer, m image.Image, level CompressionLevel, pool EncoderBufferPool, bufferSize int) error {
 	// Obviously, negative widths and heights are invalid. Furthermore, the PNG
 	// spec section 11.2.2 says that zero is invalid. Excessively large images are
 	// also rejected.
@@ -656,20 +679,21 @@ func (enc *Encoder) Encode(w io.Writer, m image.Image) error {
 	}
 
 	var e *encoder
-	if enc.BufferPool != nil {
-		buffer := enc.BufferPool.Get()
+	if pool != nil {
+		buffer := pool.Get()
 		e = (*encoder)(buffer)
 	}
 	if e == nil {
 		e = &encoder{}
 	}
-	if enc.BufferPool != nil {
-		defer enc.BufferPool.Put((*EncoderBuffer)(e))
+	if pool != nil {
+		defer pool.Put((*EncoderBuffer)(e))
 	}
 
-	e.enc = enc
 	e.w = w
 	e.m = m
+	e.compression = level
+	e.bufferSize = bufferSize
 
 	var pal color.Palette
 	// cbP8 encoding needs PalettedImage's ColorIndexAt method.
