@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning][].
   (24 -> 19 allocs per encode on a 640x480 image, output unchanged).
   Helps single-image and pooled-less batch encoding;
   the `BufferPool` path was already allocation-free.
+* Decoder: remaining per-pixel `Set*` paths write directly
+  into the image`Pix` buffer
+  (low-bit palette decode -51%, 16-bit truecolor -10%; output unchanged).
 * `Encoder` is now a true drop-in replacement for `image/png.Encoder`:
   it exposes exactly `CompressionLevel` and `BufferPool`, in the same order,
   so both keyed and unkeyed struct literals compile after switching the import.

@@ -29,6 +29,18 @@ decode copies 16-bit rows straight into the pixel buffer.
 * Time: encode -40...-65%, decode -15...-61%.
 * Allocs: 16-bit encode 307225->25; encode B/op -35...-68%.
 
+### Direct pixel writes on decode
+
+The remaining decoder paths that still went through per-pixel
+`SetNRGBA`/`SetGray`/`SetNRGBA64`/`SetRGBA64`/`SetColorIndex`
+now write straight into the image `Pix` buffer,
+dropping per-call bounds checks and color conversion.
+Covers grayscale+alpha, transparent grayscale/truecolor (8-bit and 16-bit),
+16-bit truecolor and low-bit grayscale/palette.
+
+* Time: low-bit palette decode -51% (2-bit, 640x480), 16-bit truecolor -10%.
+* Output identical.
+
 ### SIMD (amd64)
 
 avo-generated kernels, with a pure-Go fallback on other architectures

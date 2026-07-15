@@ -591,6 +591,7 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 		case cbG1:
 			if d.useTransparent {
 				ty := d.transparent[1]
+				pix, i := nrgba.Pix, pixOffset
 				for x := 0; x < width; x += 8 {
 					b := cdat[x/8]
 					for x2 := 0; x2 < 8 && x+x2 < width; x2++ {
@@ -599,22 +600,28 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 						if ycol == ty {
 							acol = 0x00
 						}
-						nrgba.SetNRGBA(x+x2, y, color.NRGBA{ycol, ycol, ycol, acol})
+						pix[i+0], pix[i+1], pix[i+2], pix[i+3] = ycol, ycol, ycol, acol
+						i += 4
 						b <<= 1
 					}
 				}
+				pixOffset += nrgba.Stride
 			} else {
+				pix, i := gray.Pix, pixOffset
 				for x := 0; x < width; x += 8 {
 					b := cdat[x/8]
 					for x2 := 0; x2 < 8 && x+x2 < width; x2++ {
-						gray.SetGray(x+x2, y, color.Gray{(b >> 7) * 0xff})
+						pix[i] = (b >> 7) * 0xff
+						i++
 						b <<= 1
 					}
 				}
+				pixOffset += gray.Stride
 			}
 		case cbG2:
 			if d.useTransparent {
 				ty := d.transparent[1]
+				pix, i := nrgba.Pix, pixOffset
 				for x := 0; x < width; x += 4 {
 					b := cdat[x/4]
 					for x2 := 0; x2 < 4 && x+x2 < width; x2++ {
@@ -623,22 +630,28 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 						if ycol == ty {
 							acol = 0x00
 						}
-						nrgba.SetNRGBA(x+x2, y, color.NRGBA{ycol, ycol, ycol, acol})
+						pix[i+0], pix[i+1], pix[i+2], pix[i+3] = ycol, ycol, ycol, acol
+						i += 4
 						b <<= 2
 					}
 				}
+				pixOffset += nrgba.Stride
 			} else {
+				pix, i := gray.Pix, pixOffset
 				for x := 0; x < width; x += 4 {
 					b := cdat[x/4]
 					for x2 := 0; x2 < 4 && x+x2 < width; x2++ {
-						gray.SetGray(x+x2, y, color.Gray{(b >> 6) * 0x55})
+						pix[i] = (b >> 6) * 0x55
+						i++
 						b <<= 2
 					}
 				}
+				pixOffset += gray.Stride
 			}
 		case cbG4:
 			if d.useTransparent {
 				ty := d.transparent[1]
+				pix, i := nrgba.Pix, pixOffset
 				for x := 0; x < width; x += 2 {
 					b := cdat[x/2]
 					for x2 := 0; x2 < 2 && x+x2 < width; x2++ {
@@ -647,39 +660,50 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 						if ycol == ty {
 							acol = 0x00
 						}
-						nrgba.SetNRGBA(x+x2, y, color.NRGBA{ycol, ycol, ycol, acol})
+						pix[i+0], pix[i+1], pix[i+2], pix[i+3] = ycol, ycol, ycol, acol
+						i += 4
 						b <<= 4
 					}
 				}
+				pixOffset += nrgba.Stride
 			} else {
+				pix, i := gray.Pix, pixOffset
 				for x := 0; x < width; x += 2 {
 					b := cdat[x/2]
 					for x2 := 0; x2 < 2 && x+x2 < width; x2++ {
-						gray.SetGray(x+x2, y, color.Gray{(b >> 4) * 0x11})
+						pix[i] = (b >> 4) * 0x11
+						i++
 						b <<= 4
 					}
 				}
+				pixOffset += gray.Stride
 			}
 		case cbG8:
 			if d.useTransparent {
 				ty := d.transparent[1]
+				pix, i := nrgba.Pix, pixOffset
 				for x := 0; x < width; x++ {
 					ycol := cdat[x]
 					acol := uint8(0xff)
 					if ycol == ty {
 						acol = 0x00
 					}
-					nrgba.SetNRGBA(x, y, color.NRGBA{ycol, ycol, ycol, acol})
+					pix[i+0], pix[i+1], pix[i+2], pix[i+3] = ycol, ycol, ycol, acol
+					i += 4
 				}
+				pixOffset += nrgba.Stride
 			} else {
 				copy(gray.Pix[pixOffset:], cdat)
 				pixOffset += gray.Stride
 			}
 		case cbGA8:
+			pix, i := nrgba.Pix, pixOffset
 			for x := 0; x < width; x++ {
 				ycol := cdat[2*x+0]
-				nrgba.SetNRGBA(x, y, color.NRGBA{ycol, ycol, ycol, cdat[2*x+1]})
+				pix[i+0], pix[i+1], pix[i+2], pix[i+3] = ycol, ycol, ycol, cdat[2*x+1]
+				i += 4
 			}
+			pixOffset += nrgba.Stride
 		case cbTC8:
 			if d.useTransparent {
 				pix, i, j := nrgba.Pix, pixOffset, 0
@@ -706,6 +730,7 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 				pixOffset += rgba.Stride
 			}
 		case cbP1:
+			pix, i := paletted.Pix, pixOffset
 			for x := 0; x < width; x += 8 {
 				b := cdat[x/8]
 				for x2 := 0; x2 < 8 && x+x2 < width; x2++ {
@@ -713,11 +738,14 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 					if len(paletted.Palette) <= int(idx) {
 						paletted.Palette = paletted.Palette[:int(idx)+1]
 					}
-					paletted.SetColorIndex(x+x2, y, idx)
+					pix[i] = idx
+					i++
 					b <<= 1
 				}
 			}
+			pixOffset += paletted.Stride
 		case cbP2:
+			pix, i := paletted.Pix, pixOffset
 			for x := 0; x < width; x += 4 {
 				b := cdat[x/4]
 				for x2 := 0; x2 < 4 && x+x2 < width; x2++ {
@@ -725,11 +753,14 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 					if len(paletted.Palette) <= int(idx) {
 						paletted.Palette = paletted.Palette[:int(idx)+1]
 					}
-					paletted.SetColorIndex(x+x2, y, idx)
+					pix[i] = idx
+					i++
 					b <<= 2
 				}
 			}
+			pixOffset += paletted.Stride
 		case cbP4:
+			pix, i := paletted.Pix, pixOffset
 			for x := 0; x < width; x += 2 {
 				b := cdat[x/2]
 				for x2 := 0; x2 < 2 && x+x2 < width; x2++ {
@@ -737,10 +768,12 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 					if len(paletted.Palette) <= int(idx) {
 						paletted.Palette = paletted.Palette[:int(idx)+1]
 					}
-					paletted.SetColorIndex(x+x2, y, idx)
+					pix[i] = idx
+					i++
 					b <<= 4
 				}
 			}
+			pixOffset += paletted.Stride
 		case cbP8:
 			if len(paletted.Palette) != 256 {
 				for x := 0; x < width; x++ {
@@ -757,14 +790,20 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 		case cbG16:
 			if d.useTransparent {
 				ty := uint16(d.transparent[0])<<8 | uint16(d.transparent[1])
+				pix, i := nrgba64.Pix, pixOffset
 				for x := 0; x < width; x++ {
-					ycol := uint16(cdat[2*x+0])<<8 | uint16(cdat[2*x+1])
-					acol := uint16(0xffff)
-					if ycol == ty {
-						acol = 0x0000
+					yhi, ylo := cdat[2*x+0], cdat[2*x+1]
+					ahi, alo := uint8(0xff), uint8(0xff)
+					if uint16(yhi)<<8|uint16(ylo) == ty {
+						ahi, alo = 0x00, 0x00
 					}
-					nrgba64.SetNRGBA64(x, y, color.NRGBA64{ycol, ycol, ycol, acol})
+					pix[i+0], pix[i+1] = yhi, ylo
+					pix[i+2], pix[i+3] = yhi, ylo
+					pix[i+4], pix[i+5] = yhi, ylo
+					pix[i+6], pix[i+7] = ahi, alo
+					i += 8
 				}
+				pixOffset += nrgba64.Stride
 			} else {
 				// image.Gray16.Pix is big-endian Y, exactly the decoded byte order.
 				copy(gray16.Pix[pixOffset:], cdat)
@@ -788,23 +827,36 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 				tr := uint16(d.transparent[0])<<8 | uint16(d.transparent[1])
 				tg := uint16(d.transparent[2])<<8 | uint16(d.transparent[3])
 				tb := uint16(d.transparent[4])<<8 | uint16(d.transparent[5])
+				pix, i := nrgba64.Pix, pixOffset
 				for x := 0; x < width; x++ {
-					rcol := uint16(cdat[6*x+0])<<8 | uint16(cdat[6*x+1])
-					gcol := uint16(cdat[6*x+2])<<8 | uint16(cdat[6*x+3])
-					bcol := uint16(cdat[6*x+4])<<8 | uint16(cdat[6*x+5])
-					acol := uint16(0xffff)
-					if rcol == tr && gcol == tg && bcol == tb {
-						acol = 0x0000
+					rhi, rlo := cdat[6*x+0], cdat[6*x+1]
+					ghi, glo := cdat[6*x+2], cdat[6*x+3]
+					bhi, blo := cdat[6*x+4], cdat[6*x+5]
+					ahi, alo := uint8(0xff), uint8(0xff)
+					if uint16(rhi)<<8|uint16(rlo) == tr &&
+						uint16(ghi)<<8|uint16(glo) == tg &&
+						uint16(bhi)<<8|uint16(blo) == tb {
+						ahi, alo = 0x00, 0x00
 					}
-					nrgba64.SetNRGBA64(x, y, color.NRGBA64{rcol, gcol, bcol, acol})
+					pix[i+0], pix[i+1] = rhi, rlo
+					pix[i+2], pix[i+3] = ghi, glo
+					pix[i+4], pix[i+5] = bhi, blo
+					pix[i+6], pix[i+7] = ahi, alo
+					i += 8
 				}
+				pixOffset += nrgba64.Stride
 			} else {
+				// image.RGBA64.Pix is big-endian RGBA; the decoded RGB byte order matches,
+				// so copy the 6 colour bytes and set alpha to 0xffff.
+				pix, i := rgba64.Pix, pixOffset
 				for x := 0; x < width; x++ {
-					rcol := uint16(cdat[6*x+0])<<8 | uint16(cdat[6*x+1])
-					gcol := uint16(cdat[6*x+2])<<8 | uint16(cdat[6*x+3])
-					bcol := uint16(cdat[6*x+4])<<8 | uint16(cdat[6*x+5])
-					rgba64.SetRGBA64(x, y, color.RGBA64{rcol, gcol, bcol, 0xffff})
+					pix[i+0], pix[i+1] = cdat[6*x+0], cdat[6*x+1]
+					pix[i+2], pix[i+3] = cdat[6*x+2], cdat[6*x+3]
+					pix[i+4], pix[i+5] = cdat[6*x+4], cdat[6*x+5]
+					pix[i+6], pix[i+7] = 0xff, 0xff
+					i += 8
 				}
+				pixOffset += rgba64.Stride
 			}
 		case cbTCA16:
 			// image.NRGBA64.Pix is big-endian RGBA, exactly the decoded byte order.
