@@ -23,7 +23,7 @@ jobs:
         run: make tools
 
       - name: Check
-        run: make ci
+        run: make ci fuzz
 
       - name: Extract changelog
         run: make release-notes > release.md

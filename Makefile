@@ -5,10 +5,11 @@ BENCHSTAT   ?= benchstat
 BENCH_COUNT ?= 6
 BENCH_REF   ?= bench_baseline.txt
 ASMGEN_REF  ?= ./internal/simd/asmgen
+FUZZ_TIME   ?= 20s
 
 .PHONY: check ci
 
-check: generate verify tidy fmt vet lint-fix align-fix test test-race test-pure test-race-pure
+check: generate verify tidy fmt vet lint-fix align-fix test test-race test-pure test-race-pure fuzz
 ci: download tools-ci generate-check verify tidy-check fmt-check vet lint align test test-race test-pure
 
 .PHONY: generate generate-check
@@ -21,7 +22,7 @@ generate:
 generate-check: generate
 	git diff --exit-code -- internal/simd
 
-.PHONY: test test-race test-pure test-race-pure
+.PHONY: test test-race test-pure test-race-pure fuzz
 
 test:
 	$(GO) test ./...
@@ -34,6 +35,9 @@ test-pure:
 
 test-race-pure:
 	$(GO) test -tags purego -race ./...
+
+fuzz:
+	$(GO) test -run='^$$' -fuzz='^FuzzDecode$$' -fuzztime=$(FUZZ_TIME) .
 
 .PHONY: bench bench-fast bench-reset
 
