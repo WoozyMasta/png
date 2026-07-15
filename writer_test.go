@@ -53,6 +53,16 @@ func convertToNRGBA(m image.Image) *image.NRGBA {
 	return ret
 }
 
+// toNRGBA64 renders m into a canonical *image.NRGBA64,
+// so two images can be compared exactly - including RGB behind a zero alpha
+// and across differing concrete types - by their Pix slices.
+func toNRGBA64(m image.Image) *image.NRGBA64 {
+	b := m.Bounds()
+	ret := image.NewNRGBA64(b)
+	draw.Draw(ret, b, m, b.Min, draw.Src)
+	return ret
+}
+
 func TestWriter(t *testing.T) {
 	// The filenames variable is declared in reader_test.go.
 	names := filenames
