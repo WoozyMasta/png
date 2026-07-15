@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning][].
 ### Removed
 -->
 
-## Unreleased
+## [1.2.0][] - 2026-07-15
 
 ### Changed
 
@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning][].
   Helps single-image and pooled-less batch encoding;
   the `BufferPool` path was already allocation-free.
 * Decoder: remaining per-pixel `Set*` paths write directly
-  into the image`Pix` buffer
+  into the image `Pix` buffer
   (low-bit palette decode -51%, 16-bit truecolor -10%; output unchanged).
 * `Encoder` is now a true drop-in replacement for `image/png.Encoder`:
   it exposes exactly `CompressionLevel` and `BufferPool`, in the same order,
@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning][].
   so a later `BufferSize` change had no effect
   and IDAT chunks stayed the original size.
 
+[1.2.0]: https://github.com/WoozyMasta/png/compare/v1.1.0...v1.2.0
+
 ## [1.1.0][] - 2026-06-15
 
 ### Added
@@ -68,7 +70,7 @@ and this project adheres to [Semantic Versioning][].
   RGB<->RGBA conversion, with a pure-Go fallback elsewhere;
   geomean -30% time vs 1.0.0.
 
-[1.1.0]: https://github.com/WoozyMasta/lzss/compare/v1.0.0...v1.1.0
+[1.1.0]: https://github.com/WoozyMasta/png/compare/v1.0.0...v1.1.0
 
 ## [1.0.0][] - 2026-02-10
 
