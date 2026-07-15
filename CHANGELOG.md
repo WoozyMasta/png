@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning][].
   so both keyed and unkeyed struct literals compile after switching the import.
   The `BufferSize` option moved to `AdvancedEncoder`, which embeds `Encoder`.
   Migrate `png.Encoder{BufferSize: n}` to `png.AdvancedEncoder{BufferSize: n}`.
+* Minimum Go version lowered from 1.25 to 1.24,
+  matching actual usage (`klauspost/compress` sets the floor).
+  `golang.org/x/sys` downgraded to v0.41.0 to allow it;
+  no functional or API change.
 
 ### Fixed
 
