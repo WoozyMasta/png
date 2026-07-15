@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning][].
 
 ### Changed
 
+* Encoder: five filter-candidate rows and the previous row
+  now share a single backing allocation instead of six separate ones
+  (24 -> 19 allocs per encode on a 640x480 image, output unchanged).
+  Helps single-image and pooled-less batch encoding;
+  the `BufferPool` path was already allocation-free.
 * `Encoder` is now a true drop-in replacement for `image/png.Encoder`:
   it exposes exactly `CompressionLevel` and `BufferPool`, in the same order,
   so both keyed and unkeyed struct literals compile after switching the import.

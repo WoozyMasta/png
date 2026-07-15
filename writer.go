@@ -59,6 +59,7 @@ type encoder struct {
 	err         error
 	zw          *zlib.Writer
 	bw          *bufio.Writer
+	buf         []uint8
 	cr          [nFilter][]uint8
 	pr          []uint8
 	cb          int
@@ -359,25 +360,24 @@ func (e *encoder) writeImage(w io.Writer, m image.Image, cb int, level int) erro
 	// cr[*] and pr are the bytes for the current and previous row.
 	// cr[0] is unfiltered (or equivalently, filtered with the ftNone filter).
 	// cr[ft], for non-zero filter types ft, are buffers for transforming cr[0] under the
-	// other PNG filter types. These buffers are allocated once and re-used for each row.
-	// The +1 is for the per-row filter type, which is at cr[*][0].
+	// other PNG filter types. The +1 is for the per-row filter type, at cr[*][0].
+	//
+	// All nFilter candidate rows plus the previous row share a single backing allocation (e.buf),
+	// carved into (nFilter+1) equal slices, so one image costs one allocation here instead of six.
 	b := m.Bounds()
 	sz := 1 + (bitsPerPixel*b.Dx()+7)/8
+	if total := sz * (nFilter + 1); cap(e.buf) < total {
+		e.buf = make([]uint8, total)
+	} else {
+		e.buf = e.buf[:total]
+	}
 	for i := range e.cr {
-		if cap(e.cr[i]) < sz {
-			e.cr[i] = make([]uint8, sz)
-		} else {
-			e.cr[i] = e.cr[i][:sz]
-		}
+		e.cr[i] = e.buf[i*sz : (i+1)*sz : (i+1)*sz]
 		e.cr[i][0] = uint8(i)
 	}
 	cr := e.cr
-	if cap(e.pr) < sz {
-		e.pr = make([]uint8, sz)
-	} else {
-		e.pr = e.pr[:sz]
-		clear(e.pr)
-	}
+	e.pr = e.buf[nFilter*sz : (nFilter+1)*sz : (nFilter+1)*sz]
+	clear(e.pr)
 	pr := e.pr
 
 	gray, _ := m.(*image.Gray)
