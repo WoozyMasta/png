@@ -23,4 +23,4 @@ jobs:
         run: make tools
 
       - name: Check
-        run: make check
+        run: make ci

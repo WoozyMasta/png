@@ -9,7 +9,7 @@ ASMGEN_REF  ?= ./internal/simd/asmgen
 .PHONY: check ci
 
 check: generate verify tidy fmt vet lint-fix align-fix test test-race test-pure test-race-pure
-ci: download tools-ci generate-check verify tidy-check fmt-check vet lint align test test-pure
+ci: download tools-ci generate-check verify tidy-check fmt-check vet lint align test test-race test-pure
 
 .PHONY: generate generate-check
 
