@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -23,7 +23,60 @@ jobs:
         run: make tools
 
       - name: Check
-        run: make ci fuzz
+        run: make ci ci-test-full
+
+  matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Minimum supported Go, full behavioral suite.
+          - os: ubuntu-latest
+            go: '1.24'
+            target: ci-test-full
+
+          # 32-bit build and run (race is unsupported on 386).
+          - os: ubuntu-latest
+            go: '1.26'
+            target: ci-test
+            goarch: '386'
+            cgo: '0'
+
+          - os: windows-latest
+            go: '1.26'
+            target: ci-test
+
+          - os: macos-latest
+            go: '1.26'
+            target: ci-test
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Install make
+        if: runner.os == 'Windows'
+        run: choco install make --no-progress -y
+
+      - name: Test
+        shell: bash
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: make ${{ matrix.target }}
+
+  release:
+    needs: [gate, matrix]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
 
       - name: Extract changelog
         run: make release-notes > release.md
