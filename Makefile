@@ -7,10 +7,12 @@ BENCH_REF   ?= bench_baseline.txt
 ASMGEN_REF  ?= ./internal/simd/asmgen
 FUZZ_TIME   ?= 20s
 
-.PHONY: check ci
+.PHONY: check ci ci-test ci-test-full
 
 check: generate verify tidy fmt vet lint-fix align-fix test test-race test-pure test-race-pure fuzz
-ci: download tools-ci generate-check verify tidy-check fmt-check vet lint align test test-race test-pure
+ci: download tools-ci generate-check verify tidy-check fmt-check vet lint align
+ci-test: test test-pure
+ci-test-full: ci-test test-race fuzz
 
 .PHONY: generate generate-check
 
