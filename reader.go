@@ -533,6 +533,10 @@ func (d *decoder) readImagePass(r io.Reader, pass int, allocateOnly bool) (image
 			pr = append(pr, make([]byte, rs-len(pr))...)
 		}
 		pr = pr[:rs]
+		// The first row of each pass must treat the previous row as all zeroes (PNG spec, filtering).
+		// A pooled buffer may hold stale bytes, so clear pr;
+		// cr is fully overwritten by io.ReadFull each row.
+		clear(pr)
 		defer func() {
 			d.bufferPool.Put(cr)
 			d.bufferPool.Put(pr)

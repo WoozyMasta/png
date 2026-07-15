@@ -14,6 +14,15 @@ and this project adheres to [Semantic Versioning][].
 ### Removed
 -->
 
+## Unreleased
+
+### Fixed
+
+* Decoder: `BufferPool` no longer produces corrupted output.
+  The first row of each (interlaced) pass now correctly treats
+  the previous row as all zeroes instead of reusing dirty pooled bytes,
+  which broke the Up, Average and Paeth filters.
+
 ## [1.1.0][] - 2026-06-15
 
 ### Added

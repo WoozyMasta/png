@@ -7,7 +7,10 @@ package png
 import (
 	"bufio"
 	"bytes"
+	"compress/zlib"
+	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"io"
@@ -833,6 +836,158 @@ func TestDecodePalettedWithTransparency(t *testing.T) {
 		t.Fatalf("Decode: %v", err)
 	} else if _, _, _, alpha := img.ColorModel().(color.Palette)[0].RGBA(); alpha != 0 {
 		t.Errorf("Decode: got %d, want 0", alpha)
+	}
+}
+
+// dirtyPool is a DecoderBufferPool that hands out freshly allocated but non-zeroed ("poisoned") buffers.
+// It proves that the decoder itself zeroes the previous-row buffer for the first row of each pass,
+// rather than relying on the pool to return clean memory.
+type dirtyPool struct{}
+
+func (dirtyPool) Get(size int) []byte {
+	b := make([]byte, size)
+	for i := range b {
+		b[i] = 0xff
+	}
+	return b
+}
+
+func (dirtyPool) Put([]byte) {}
+
+// pngChunk assembles a single PNG chunk (length, type, data, CRC).
+func pngChunk(typ string, data []byte) []byte {
+	out := make([]byte, 0, 12+len(data))
+	var buf [4]byte
+	binary.BigEndian.PutUint32(buf[:], uint32(len(data)))
+	out = append(out, buf[:]...)
+	out = append(out, typ...)
+	out = append(out, data...)
+	crc := crc32.NewIEEE()
+	crc.Write([]byte(typ))
+	crc.Write(data)
+	binary.BigEndian.PutUint32(buf[:], crc.Sum32())
+	return append(out, buf[:]...)
+}
+
+// makeGray8PNG builds a non-interlaced 8-bit grayscale PNG from raw filtered
+// scanlines (a leading filter-type byte followed by width bytes per row).
+func makeGray8PNG(t *testing.T, width, height int, scanlines []byte) []byte {
+	t.Helper()
+	ihdr := make([]byte, 13)
+	binary.BigEndian.PutUint32(ihdr[0:4], uint32(width))
+	binary.BigEndian.PutUint32(ihdr[4:8], uint32(height))
+	ihdr[8] = 8 // bit depth
+	ihdr[9] = 0 // color type: grayscale
+	// ihdr[10..12] compression/filter/interlace default to 0.
+
+	var comp bytes.Buffer
+	zw := zlib.NewWriter(&comp)
+	if _, err := zw.Write(scanlines); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	out := []byte(pngHeader)
+	out = append(out, pngChunk("IHDR", ihdr)...)
+	out = append(out, pngChunk("IDAT", comp.Bytes())...)
+	out = append(out, pngChunk("IEND", nil)...)
+	return out
+}
+
+// TestDecoderBufferPoolFirstRowFilters checks that decoding through a dirty buffer pool
+// matches the reference (no-pool) decode for every filter type.
+// The first row has no real predecessor,
+// so a non-zeroed previous-row buffer would corrupt the Up, Average and Paeth filters.
+func TestDecoderBufferPoolFirstRowFilters(t *testing.T) {
+	payload := []byte{10, 20, 30, 40}
+	filters := []struct {
+		name   string
+		filter byte
+	}{
+		{"None", ftNone},
+		{"Sub", ftSub},
+		{"Up", ftUp},
+		{"Average", ftAverage},
+		{"Paeth", ftPaeth},
+	}
+	for _, f := range filters {
+		t.Run(f.name, func(t *testing.T) {
+			scanline := append([]byte{f.filter}, payload...)
+			data := makeGray8PNG(t, len(payload), 1, scanline)
+
+			want, err := Decode(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("reference decode: %v", err)
+			}
+			dec := Decoder{BufferPool: dirtyPool{}}
+			got, err := dec.Decode(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("pooled decode: %v", err)
+			}
+			if !reflect.DeepEqual(want, got) {
+				t.Fatalf("pooled decode differs from reference:\nwant %#v\ngot  %#v", want, got)
+			}
+
+			// Anchor absolute correctness: with a zero previous row, the Up
+			// filter reconstructs each pixel as the stored payload byte.
+			if f.filter == ftUp {
+				img := got.(*image.Gray)
+				for i, p := range payload {
+					if y := img.GrayAt(i, 0).Y; y != p {
+						t.Fatalf("Up pixel %d = %d, want %d", i, y, p)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestDecoderBufferPoolInterlaced checks that an interlaced image decoded through
+// a dirty buffer pool matches the reference decode.
+// Each Adam7 pass allocates its own previous-row buffer, so every pass exercises the fix.
+func TestDecoderBufferPoolInterlaced(t *testing.T) {
+	data, err := os.ReadFile("testdata/gray-gradient.interlaced.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("reference decode: %v", err)
+	}
+	dec := Decoder{BufferPool: dirtyPool{}}
+	got, err := dec.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("pooled decode: %v", err)
+	}
+	if !reflect.DeepEqual(want, got) {
+		t.Fatal("interlaced pooled decode differs from reference")
+	}
+}
+
+// TestDecoderBufferPoolRoundtrip decodes the standard test images
+// with and without a dirty buffer pool and requires identical results.
+func TestDecoderBufferPoolRoundtrip(t *testing.T) {
+	for _, name := range filenames {
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile("testdata/pngsuite/" + name + ".png")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, err := Decode(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("reference decode: %v", err)
+			}
+			dec := Decoder{BufferPool: dirtyPool{}}
+			got, err := dec.Decode(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("pooled decode: %v", err)
+			}
+			if !reflect.DeepEqual(want, got) {
+				t.Fatal("pooled decode differs from reference")
+			}
+		})
 	}
 }
 
