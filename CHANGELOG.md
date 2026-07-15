@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning][].
   The first row of each (interlaced) pass now correctly treats
   the previous row as all zeroes instead of reusing dirty pooled bytes,
   which broke the Up, Average and Paeth filters.
+* Encoder: `BufferSize` is now honored when an
+  `EncoderBuffer` is reused via `BufferPool`.
+  Previously the buffered writer kept the size from the first encode,
+  so a later `BufferSize` change had no effect
+  and IDAT chunks stayed the original size.
 
 ## [1.1.0][] - 2026-06-15
 

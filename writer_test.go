@@ -343,6 +343,65 @@ func (p *pool) Put(b *EncoderBuffer) {
 	p.b = b
 }
 
+// maxIDATLen returns the largest IDAT chunk length in a PNG byte stream.
+func maxIDATLen(data []byte) uint32 {
+	const chunkFieldsLength = 12 // length + name + crc
+	var max uint32
+	for i := len(pngHeader); i < len(data)-chunkFieldsLength; {
+		length := binary.BigEndian.Uint32(data[i : i+4])
+		if string(data[i+4:i+8]) == "IDAT" && length > max {
+			max = length
+		}
+		i += chunkFieldsLength + int(length)
+	}
+	return max
+}
+
+// TestEncoderBufferSizeWithPool verifies that BufferSize
+// is honored when an EncoderBuffer is reused via a BufferPool.
+// Otherwise the buffered writer keeps the size from the first encode
+// and later BufferSize changes have no effect.
+func TestEncoderBufferSizeWithPool(t *testing.T) {
+	// An image whose compressed IDAT stream is comfortably larger
+	// than the small buffer size, so several flushes occur.
+	m := image.NewNRGBA(image.Rect(0, 0, 100, 100))
+	for y := 0; y < 100; y++ {
+		for x := 0; x < 100; x++ {
+			m.Set(x, y, color.NRGBA{uint8(x * 3), uint8(y * 5), uint8(x ^ y), 0xff})
+		}
+	}
+
+	const smallSize = 16
+	const largeSize = 1 << 15
+
+	var p pool
+
+	// First encode pins the small buffer size into the pooled EncoderBuffer.
+	if err := (&Encoder{BufferPool: &p, BufferSize: smallSize}).Encode(io.Discard, m); err != nil {
+		t.Fatalf("first encode: %v", err)
+	}
+
+	// Second encode reuses the same buffer but asks for the large size.
+	var pooled bytes.Buffer
+	if err := (&Encoder{BufferPool: &p, BufferSize: largeSize}).Encode(&pooled, m); err != nil {
+		t.Fatalf("pooled encode: %v", err)
+	}
+
+	// Reference: same image and BufferSize, but no reuse.
+	var ref bytes.Buffer
+	if err := (&Encoder{BufferSize: largeSize}).Encode(&ref, m); err != nil {
+		t.Fatalf("reference encode: %v", err)
+	}
+
+	if !bytes.Equal(pooled.Bytes(), ref.Bytes()) {
+		t.Errorf("pooled encode differs from reference: max IDAT len pooled=%d ref=%d",
+			maxIDATLen(pooled.Bytes()), maxIDATLen(ref.Bytes()))
+	}
+	if got := maxIDATLen(pooled.Bytes()); got <= smallSize {
+		t.Errorf("largest IDAT chunk = %d, want > %d (BufferSize was not applied)", got, smallSize)
+	}
+}
+
 func BenchmarkEncodeGrayWithBufferPool(b *testing.B) {
 	img := image.NewGray(image.Rect(0, 0, 640, 480))
 	e := Encoder{

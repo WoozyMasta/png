@@ -596,12 +596,14 @@ func (e *encoder) writeIDATs() {
 	if e.err != nil {
 		return
 	}
-	if e.bw == nil {
-		sz := e.enc.BufferSize
-		if sz <= 0 {
-			sz = 1 << 15
-		}
-		e.bw = bufio.NewWriterSize(e, sz)
+	size := e.enc.BufferSize
+	if size <= 0 {
+		size = 1 << 15
+	}
+	// A bw reused from a pool keeps its original buffer size across encodes,
+	// so recreate it when BufferSize changes; otherwise the cheap Reset suffices.
+	if e.bw == nil || e.bw.Size() != size {
+		e.bw = bufio.NewWriterSize(e, size)
 	} else {
 		e.bw.Reset(e)
 	}
